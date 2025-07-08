@@ -1,4 +1,4 @@
-# --- START OF COMPLETE FILE manga_pro_app.py (v3.0 - Gemini & OpenAI Integration) ---
+# --- START OF COMPLETE FILE manga_pro_app.py (v3.2 - Gemini 2.0 Flash Preview) ---
 
 import streamlit as st
 from openai import OpenAI
@@ -25,7 +25,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# GPTs/Geminiの完全なプロンプト定義
+# (プロンプト、テンプレート等の定義は変更なし)
 GPTS_PROMPTS = {
     "manga_master": """
 あなたは「MangaMaster」として、漫画制作の全工程をサポートする専門家です。
@@ -208,8 +208,6 @@ GPTS_PROMPTS = {
 特に注目すべき点があれば詳しく言及してください。評価は作者の成長を促す、ポジティブかつ具体的な内容を心がけてください。
 """
 }
-
-# タスク管理用の定義
 TASK_TEMPLATES = {
     "連載準備": [
         {"task": "コンセプト決定", "duration": 3, "assignee": "原作者"},
@@ -229,8 +227,6 @@ TASK_TEMPLATES = {
         {"task": "トーン・仕上げ", "duration": 2, "assignee": "アシスタント"}
     ]
 }
-
-# 評価オプションの定義
 EVALUATION_OPTIONS = {
     "プロット / テキスト": {
         "options": [
@@ -257,7 +253,6 @@ EVALUATION_OPTIONS = {
         "defaults": ["全体的な画力と魅力", "線の質と表現力（強弱・入り抜き）", "トーンワークと陰影表現"]
     }
 }
-
 EVALUATION_STYLES = {
     "厳格な編集者": "商業誌の基準で厳しく評価し、プロレベルを求める",
     "励ましの先輩": "良い点を多く見つけて励ましながら、建設的なアドバイスを提供",
@@ -267,6 +262,8 @@ EVALUATION_STYLES = {
 }
 
 # セッション状態の初期化
+# ... (変更なし) ...
+
 if 'projects' not in st.session_state: st.session_state.projects = []
 if 'team_members' not in st.session_state: st.session_state.team_members = ["原作者", "作画担当", "アシスタント", "編集者"]
 if 'idea_bank' not in st.session_state: st.session_state.idea_bank = []
@@ -274,35 +271,43 @@ if 'world_settings' not in st.session_state: st.session_state.world_settings = [
 if 'characters' not in st.session_state: st.session_state.characters = []
 if 'generated_content' not in st.session_state: st.session_state.generated_content = {}
 if 'evaluation_results' not in st.session_state: st.session_state.evaluation_results = []
-# APIクライアントの初期化
 if 'openai_client' not in st.session_state: st.session_state.openai_client = None
 if 'gemini_model' not in st.session_state: st.session_state.gemini_model = None
 
-# --- API設定と呼び出し関数 (Gemini & OpenAI 対応) ---
+
+# ★★★ モデル名変更箇所 1 ★★★
+# GeminiモデルのIDを最新のものに
+GEMINI_MODEL_ID = "gemini-2.0-flash"  #  <- ここを修正！
+
+# --- API設定と呼び出し関数 ---
 
 def setup_apis():
-    """サイドバーでの入力に基づきAPIクライアントをセットアップ"""
     # OpenAI
     openai_api_key = st.session_state.get('openai_api_key') or os.getenv('OPENAI_API_KEY')
     if openai_api_key:
         try:
             st.session_state.openai_client = OpenAI(api_key=openai_api_key)
         except Exception:
-            st.session_state.openai_client = None # エラー時はNoneに戻す
+            st.session_state.openai_client = None
     
     # Gemini
     google_api_key = st.session_state.get('google_api_key') or os.getenv('GOOGLE_API_KEY')
     if google_api_key:
         try:
             genai.configure(api_key=google_api_key)
-            st.session_state.gemini_model = genai.GenerativeModel('gemini-1.5-pro-latest')
-        except Exception:
-            st.session_state.gemini_model = None # エラー時はNoneに戻す
+            # ★★★ モデル名変更箇所 2 ★★★
+            st.session_state.gemini_model = genai.GenerativeModel(GEMINI_MODEL_ID)
+        except Exception as e:
+            st.session_state.gemini_model = None
+            # プレビューモデルでエラーが出た場合に備えて、エラーメッセージを具体的に表示
+            if "not found" in str(e).lower():
+                 st.error(f"モデル '{GEMINI_MODEL_ID}' が見つかりません。APIキーがこのモデルへのアクセス権を持っているか確認してください。")
+            else:
+                 st.error(f"Google Gemini APIの初期化に失敗: {e}")
+
 
 def call_generative_ai(prompt_key, model, text_content="", image_data_list=None, **kwargs):
-    """選択されたAIモデルを呼び出す汎用関数"""
-    
-    # kwargsにNoneが含まれているとformatでエラーになるため、空文字に変換
+    # (この関数の中身はモデル名を引数で受け取るため、修正不要)
     for key, value in kwargs.items():
         if value is None:
             kwargs[key] = ""
@@ -311,38 +316,25 @@ def call_generative_ai(prompt_key, model, text_content="", image_data_list=None,
     prompt_text = GPTS_PROMPTS[prompt_key].format(**kwargs)
     
     try:
-        # --- OpenAI (GPT)モデルの場合 ---
         if "gpt" in model.lower():
             if not st.session_state.openai_client:
-                st.error("OpenAI APIキーが設定されていないか、無効です。サイドバーで設定してください。")
+                st.error("OpenAI APIキーが設定されていないか、無効です。")
                 return None
-
+            # (GPT呼び出しロジックは変更なし)
             user_messages = [{"type": "text", "text": prompt_text}]
             if image_data_list:
                 for i, image_data in enumerate(image_data_list):
-                    page_text = f"これは{i+1}ページ目の画像です。"
-                    user_messages.append({"type": "text", "text": page_text})
-                    user_messages.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_data}"}
-                    })
-            
-            messages = [
-                {"role": "system", "content": "あなたは漫画制作のプロフェッショナルアシスタントです。"},
-                {"role": "user", "content": user_messages}
-            ]
-            
-            response = st.session_state.openai_client.chat.completions.create(
-                model=model, messages=messages, temperature=0.7, max_tokens=4000
-            )
+                    user_messages.append({"type": "text", "text": f"これは{i+1}ページ目の画像です。"})
+                    user_messages.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_data}"}})
+            messages = [{"role": "system", "content": "あなたは漫画制作のプロフェッショナルアシスタントです。"}, {"role": "user", "content": user_messages}]
+            response = st.session_state.openai_client.chat.completions.create(model=model, messages=messages, temperature=0.7, max_tokens=4000)
             return response.choices[0].message.content
 
-        # --- Google (Gemini)モデルの場合 ---
         elif "gemini" in model.lower():
             if not st.session_state.gemini_model:
-                st.error("Google APIキーが設定されていないか、無効です。サイドバーで設定してください。")
+                st.error("Google APIキーが設定されていないか、無効です。")
                 return None
-
+            # (Gemini呼び出しロジックは変更なし)
             request_contents = [prompt_text]
             if image_data_list:
                 for i, image_data in enumerate(image_data_list):
@@ -350,20 +342,13 @@ def call_generative_ai(prompt_key, model, text_content="", image_data_list=None,
                     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                     request_contents.append(f"これは{i+1}ページ目の画像です。")
                     request_contents.append(img)
-            
-            # 創作物の評価でブロックされにくくするための安全設定
             safety_settings = [
                 {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
             ]
-            
-            response = st.session_state.gemini_model.generate_content(
-                request_contents,
-                safety_settings=safety_settings,
-                generation_config={"temperature": 0.7}
-            )
+            response = st.session_state.gemini_model.generate_content(request_contents, safety_settings=safety_settings, generation_config={"temperature": 0.7})
             return response.text
         
         else:
@@ -374,32 +359,23 @@ def call_generative_ai(prompt_key, model, text_content="", image_data_list=None,
         st.error(f"AIモデル ({model}) の呼び出し中にエラーが発生しました: {e}")
         return None
 
-# --- 補助関数 ---
+# (補助関数は変更なし)
 def create_gantt_chart(tasks):
     if not tasks: return None
-    df = pd.DataFrame(tasks)
-    df['Start'] = pd.to_datetime(df['start_date'])
-    df['Finish'] = pd.to_datetime(df['end_date'])
+    df = pd.DataFrame(tasks); df['Start'] = pd.to_datetime(df['start_date']); df['Finish'] = pd.to_datetime(df['end_date'])
     fig = px.timeline(df, x_start="Start", x_end="Finish", y="task_name", color="assignee", title="プロジェクトスケジュール", labels={"task_name": "タスク", "assignee": "担当者"})
-    fig.update_yaxes(categoryorder="total ascending")
-    fig.update_layout(height=max(400, len(tasks) * 30))
+    fig.update_yaxes(categoryorder="total ascending"); fig.update_layout(height=max(400, len(tasks) * 30))
     return fig
 
 def create_progress_chart(project):
     if 'tasks' not in project or not project['tasks']: return None
-    tasks = project['tasks']
-    completed = len([t for t in tasks if t.get('status') == '完了'])
-    in_progress = len([t for t in tasks if t.get('status') == '進行中'])
-    not_started = len([t for t in tasks if t.get('status') == '未着手'])
-    fig = go.Figure(data=[
-        go.Bar(name='完了', x=['進捗'], y=[completed], marker_color='#28a745'),
-        go.Bar(name='進行中', x=['進捗'], y=[in_progress], marker_color='#ffc107'),
-        go.Bar(name='未着手', x=['進捗'], y=[not_started], marker_color='#6c757d')
-    ])
+    tasks = project['tasks']; completed = len([t for t in tasks if t.get('status') == '完了']); in_progress = len([t for t in tasks if t.get('status') == '進行中']); not_started = len([t for t in tasks if t.get('status') == '未着手'])
+    fig = go.Figure(data=[go.Bar(name='完了', x=['進捗'], y=[completed], marker_color='#28a745'), go.Bar(name='進行中', x=['進捗'], y=[in_progress], marker_color='#ffc107'), go.Bar(name='未着手', x=['進捗'], y=[not_started], marker_color='#6c757d')])
     fig.update_layout(barmode='stack', title='タスク進捗状況', yaxis_title='タスク数', height=300)
     return fig
 
-# --- サイドバー (APIキー入力対応) ---
+# --- サイドバー ---
+# (サイドバーは変更なし)
 with st.sidebar:
     st.title("📚 漫画制作プロ管理")
     st.info("AI機能を使用するには、少なくとも1つのAPIキーを設定してください。")
@@ -408,26 +384,28 @@ with st.sidebar:
         st.text_input("OpenAI APIキー", type="password", key='openai_api_key', on_change=setup_apis)
         st.text_input("Google APIキー (Gemini)", type="password", key='google_api_key', on_change=setup_apis)
 
-    # on_changeでAPI設定が実行されるが、初回ロード時にも実行
     if 'first_load' not in st.session_state:
         setup_apis()
         st.session_state.first_load = False
 
-    if st.session_state.openai_client:
-        st.success("✅ OpenAI 接続済み")
-    else:
-        st.warning("❌ OpenAI 未接続")
-    if st.session_state.gemini_model:
-        st.success("✅ Google Gemini 接続済み")
-    else:
-        st.warning("❌ Google Gemini 未接続")
+    if st.session_state.openai_client: st.success("✅ OpenAI 接続済み")
+    else: st.warning("❌ OpenAI 未接続")
+    if st.session_state.gemini_model: st.success("✅ Google Gemini 接続済み")
+    else: st.warning("❌ Google Gemini 未接続")
         
     st.divider()
     menu = st.radio("メニュー", ["🏠 ダッシュボード", "🚀 新規プロジェクト", "💡 アイデア工房", "📝 シナリオ作成", "👥 キャラクター工房", "🌍 世界観設定", "📅 スケジュール管理", "👥 チーム管理", "📊 分析・レポート", "✍️ アイデア・原稿評価"])
 
+
 # --- メインコンテンツ ---
 
+# ★★★ モデル名変更箇所 3 ★★★
+# UIの選択肢タプルを定義
+AVAILABLE_MODELS = ("gpt-4o", GEMINI_MODEL_ID)
+
+# (ダッシュボード、新規プロジェクトは変更なし)
 if menu == "🏠 ダッシュボード":
+    # ... (ダッシュボードのコード) ...
     st.title("📊 プロジェクトダッシュボード")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -483,7 +461,9 @@ if menu == "🏠 ダッシュボード":
     else:
         st.write("まだ活動履歴がありません")
 
+
 elif menu == "🚀 新規プロジェクト":
+    # ... (新規プロジェクトのコード) ...
     st.title("🚀 新規プロジェクト作成")
     with st.form("new_project"):
         st.subheader("基本情報")
@@ -523,9 +503,11 @@ elif menu == "🚀 新規プロジェクト":
         st.success(f"プロジェクト「{title}」を作成しました！")
         st.balloons()
 
+# 各AI機能でモデル選択UIを修正
 elif menu == "💡 アイデア工房":
     st.title("💡 アイデア工房 - MangaMaster AI")
-    ai_model = st.selectbox("使用するAIモデル", ("gpt-4o", "gemini-1.5-pro-latest"), help="アイデア生成に使用するAIモデルを選択")
+    ai_model = st.selectbox("使用するAIモデル", AVAILABLE_MODELS, help="アイデア生成に使用するAIモデルを選択")
+    # ... (以降のロジックは変更なし)
     tab1, tab2, tab3 = st.tabs(["クイック生成", "詳細生成", "アイデアバンク"])
     with tab1:
         st.subheader("クイックアイデア生成")
@@ -593,7 +575,8 @@ elif menu == "💡 アイデア工房":
 
 elif menu == "📝 シナリオ作成":
     st.title("📝 シナリオ作成工房")
-    ai_model = st.selectbox("使用するAIモデル", ("gpt-4o", "gemini-1.5-pro-latest"))
+    ai_model = st.selectbox("使用するAIモデル", AVAILABLE_MODELS)
+    # ... (以降のロジックは変更なし)
     with st.form("scenario_form"):
         st.info("物語の骨子となる情報を入力し、具体的なシーンのシナリオを生成します。")
         scenario_base = st.text_area("シナリオのベースとなるプロットや状況", height=150, placeholder="例：主人公のアキラが、長年追い求めていた伝説の剣をついに発見するシーン。しかし、そこにはライバルのカイトも現れる。")
@@ -614,7 +597,8 @@ elif menu == "📝 シナリオ作成":
 
 elif menu == "👥 キャラクター工房":
     st.title("👥 キャラクター工房")
-    ai_model = st.selectbox("使用するAIモデル", ("gpt-4o", "gemini-1.5-pro-latest"), key="char_model")
+    ai_model = st.selectbox("使用するAIモデル", AVAILABLE_MODELS, key="char_model")
+    # ... (以降のロジックは変更なし)
     tab1, tab2, tab3 = st.tabs(["キャラクター作成", "キャラクター一覧", "キャラクターアーク設計"])
     with tab1:
         st.subheader("🎨 新規キャラクター作成")
@@ -680,7 +664,8 @@ elif menu == "👥 キャラクター工房":
 
 elif menu == "🌍 世界観設定":
     st.title("🌍 世界観設定工房")
-    ai_model = st.selectbox("使用するAIモデル", ("gpt-4o", "gemini-1.5-pro-latest"), key="world_model")
+    ai_model = st.selectbox("使用するAIモデル", AVAILABLE_MODELS, key="world_model")
+    # ... (以降のロジックは変更なし)
     tab1, tab2, tab3 = st.tabs(["世界観生成", "設定集", "地図作成支援"])
     with tab1:
         st.subheader("世界観の基本設定")
@@ -741,6 +726,7 @@ elif menu == "🌍 世界観設定":
             st.warning("※実際の地図は画像編集ソフトで作成してください。")
 
 elif menu == "📅 スケジュール管理":
+    # ... (スケジュール管理のコード) ...
     st.title("📅 スケジュール管理")
     if st.session_state.projects:
         project_titles = [p['title'] for p in st.session_state.projects]
@@ -828,6 +814,7 @@ elif menu == "📅 スケジュール管理":
         st.info("まずは「新規プロジェクト」メニューからプロジェクトを作成してください。")
 
 elif menu == "👥 チーム管理":
+    # ... (チーム管理のコード) ...
     st.title("👥 チーム管理")
     tab1, tab2, tab3 = st.tabs(["メンバー一覧", "役割分担", "作業負荷"])
     with tab1:
@@ -876,6 +863,7 @@ elif menu == "👥 チーム管理":
             st.info("タスクデータがありません。")
 
 elif menu == "📊 分析・レポート":
+    # ... (分析・レポートのコード) ...
     st.title("📊 分析・レポート")
     tab1, tab2, tab3 = st.tabs(["プロジェクト分析", "進捗レポート", "データエクスポート"])
     with tab1:
@@ -916,8 +904,8 @@ elif menu == "✍️ アイデア・原稿評価":
     st.title("✍️ 強化版アイデア・原稿評価システム")
     st.info("📝 テキスト、🖼️ 画像、📄 PDFファイルをアップロードして、プロ編集者レベルのAI評価を受けましょう。")
     
-    ai_model = st.selectbox("使用するAIモデル", ("gpt-4o", "gemini-1.5-pro-latest"), key="eval_model")
-
+    ai_model = st.selectbox("使用するAIモデル", AVAILABLE_MODELS, key="eval_model")
+    # ... (以降の評価ロジックは変更なし)
     evaluation_mode = st.radio(
         "評価モードを選択",
         ["📋 全体評価", "📖 ページ別詳細評価", "📊 評価履歴"],
@@ -1174,7 +1162,6 @@ elif menu == "✍️ アイデア・原稿評価":
                         )
                     with d_col2:
                         if st.button("🗑️ この評価を削除", key=f"del_hist_{i}", type="secondary"):
-                            # 削除対象を特定するためにインデックスではなく、タイムスタンプで検索
                             original_index = -1
                             for idx, item in enumerate(st.session_state.evaluation_results):
                                 if item['timestamp'] == result['timestamp']:
@@ -1186,6 +1173,6 @@ elif menu == "✍️ アイデア・原稿評価":
 
 # フッター
 st.divider()
-st.caption("🤖 Powered by OpenAI, Google Gemini & Streamlit | 漫画制作プロフェッショナル管理システム v3.0 (Dual AI)")
+st.caption("🤖 Powered by OpenAI, Google Gemini & Streamlit | 漫画制作プロフェッショナル管理システム v3.2 (Gemini 2.0 Flash Preview)")
 
 # --- END OF COMPLETE FILE ---
